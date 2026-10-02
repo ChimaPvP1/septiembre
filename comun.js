@@ -1,9 +1,13 @@
 /* Piezas compartidas por la página de los jugadores y la del organizador. */
 const ID_PREFIX = "sej-cajasan-2026-";
+// STUN para la conexión directa y, de respaldo, los servidores TURN públicos de
+// PeerJS (los mismos que trae la librería por defecto): se usan solo si el
+// celular y el presentador están en redes que no se pueden conectar directo.
 const PEER_OPTS = { debug: 0, config: { iceServers: [
   { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" }
-] } };
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: ["turn:eu-0.turn.peerjs.com:3478", "turn:us-0.turn.peerjs.com:3478"], username: "peerjs", credential: "peerjsp" }
+], sdpSemantics: "unified-plan" } };
 
 const SHAPES = [
   '<svg viewBox="0 0 32 32"><path d="M16 3 30 28H2z"/></svg>',
