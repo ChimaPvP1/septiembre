@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#004d9d">
+<title>Organizador · Septiembre en Juego · Cajasan</title>
+<link rel="icon" type="image/png" href="img/icono.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito+Sans:wght@400;600;800&display=swap">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header class="cabecera">
+  <div class="cabecera-in">
+    <div class="marca">
+      <img src="img/cajasan-azul.png" alt="Cajasan" width="355" height="251">
+      <span class="marca-sep" aria-hidden="true"></span>
+      <span class="marca-titulo">Septiembre <span>en Juego</span></span>
+    </div>
+    <div id="status" class="chip-estado">Cargando…</div>
+  </div>
+</header>
+<div class="franja" aria-hidden="true"></div>
+<div class="wrap"><main id="app" class="stage" aria-live="polite"></main></div>
+<div id="cortina" class="cortina" hidden aria-hidden="true">
+  <div class="cortina-in"><img src="img/cajasan-blanco.png" alt=""><div class="cortina-t"></div><div class="cortina-s"></div></div>
+</div>
+<canvas id="confetti" hidden></canvas>
+<script src="peer.js"></script>
+<script src="comun.js"></script>
+<script>
+/* Página del ORGANIZADOR (enlace privado). Solo desde aquí se crean partidas
+   y se editan las preguntas; la página pública solo deja unirse con el PIN. */
+const DEFAULT_SET = {
+ "questions": [
+  { "q": "¿De dónde viene originalmente la tradición de cantar \"Happy Birthday\"?", "o": ["Francia","Inglaterra","Estados Unidos","Italia"], "c": 2, "f": "" },
+  { "q": "En Colombia, ¿Cuándo se celebra el Día del Amor y la Amistad?", "o": ["El 14 de febrero","El 1 de septiembre","El tercer sábado de septiembre","El último viernes de octubre"], "c": 2, "f": "" },
+  { "q": "Según registros de nacimientos en EE. UU. (1994–2014), ¿cuál es el cumpleaños más común?", "o": ["9 de septiembre","1 de enero","14 de febrero","25 de diciembre"], "c": 0, "f": "" },
+  { "q": "¿Qué significa celebrar un cumpleaños?", "o": ["Celebrar el aniversario del nacimiento de una persona","Celebrar el inicio de año nuevo","Celebrar la mayoría de edad","Celebrar un logro"], "c": 0, "f": "" },
+  { "q": "¿Cuántas personas debe haber en un salón para que sea más probable que no que dos cumplan años el mismo día?", "o": ["23","100","183","365"], "c": 0, "f": "Es la «paradoja del cumpleaños». Con 23 personas la probabilidad supera el 50 %, y con 70 pasa del 99,9 %." },
+  { "q": "¿Qué ingredientes hace que una vela pueda mantenerse encedida?", "o": ["Cera","Harina","Azúcar","Sal"], "c": 0, "f": "" },
+  { "q": "¿Qué signos del zodiaco cumplen años en septiembre?", "o": ["Leo y Virgo","Cáncer y Leo","Virgo y Libra","Libra y Escorpio"], "c": 2, "f": "Virgo va hasta alrededor del 22 de septiembre y Libra empieza hacia el 23." },
+  { "q": "Si alguien nació el 29 de febrero, ¿cada cuánto ocurre exactamente su fecha de cumpleaños?", "o": ["Cada año","Cada 2 años","Cada 4 años aproximadamente","Cada 10 años"], "c": 2, "f": "" },
+  { "q": "Una persona cumple años un lunes. ¿Qué día de la semana será su cumpleaños exactamente un año después si el año siguiente NO es bisiesto?", "o": ["Lunes","Miércoles","Domingo","Martes"], "c": 3, "f": "" },
+  { "q": "¿Cuántos días tiene septiembre?", "o": ["28","29","30","31"], "c": 2, "f": "" },
+  { "q": "¿Qué mes está exactamente tres meses después de septiembre?", "o": ["Enero","Noviembre","Diciembre","Febrero"], "c": 2, "f": "" },
+  { "q": "¿Quién del equipo cumplió años en septiembre?", "o": ["Diana, Daniela, Silvia","Diana, Daniela, Mayerly","Diana, Mayerly, Maria Paula","Daniela, Diana, Silvia, Mayerly"], "c": 0, "f": "" }
+ ],
+ "dur": 15
+};
+const STORE_KEY = "sej-preguntas-v1";
+// Dirección que se les da a los jugadores (la pública, nunca la de esta página)
+const LINK_JUGADORES = new URL("./", location.href).href; // la carpeta del sitio (sirve en Vercel y en GitHub Pages)
+const LINK_VISIBLE = LINK_JUGADORES.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
+let QUESTIONS, DUR;
+function cleanSet(data){
+  if (!data || !Array.isArray(data.questions)) return null;
+  const qs = data.questions.map(x => {
+    const o = (Array.isArray(x.o) ? x.o : []).map(s => String(s||"").trim().slice(0,120)).filter(Boolean).slice(0,4);
+    const c = Math.max(0, Math.min(o.length-1, x.c|0));
+    return { q:String(x.q||"").trim().slice(0,240), o, c, f:String(x.f||"").trim().slice(0,400) };
+  }).filter(x => x.q && x.o.length >= 2);
+  if (!qs.length) return null;
+  return { questions:qs, dur: Math.max(5, Math.min(120, parseInt(data.dur,10) || 20)) };
+}
+function loadSet(){
+  let s = null;
+  try { s = cleanSet(JSON.parse(localStorage.getItem(STORE_KEY) || "null")); } catch {}
+  s = s || cleanSet(DEFAULT_SET);
+  QUESTIONS = s.questions; DUR = s.dur;
+}
+loadSet();
+
+const ICONO_CANDADO = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#004d9d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const ICONO_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+/* ---------- INICIO DEL ORGANIZADOR ---------- */
+function renderHome(){
+  mode = "home";
+  $app.innerHTML = `
+  <section class="hero">
+    <div class="entra">
+      <p class="etq">Panel del organizador</p>
+      <h1 style="margin-top:8px">Septiembre, cumpleaños y <em>datos curiosos</em></h1>
+      <p class="lead">${QUESTIONS.length} preguntas · ${DUR} segundos por pregunta. Proyecta esta pantalla y crea la partida cuando todos estén listos.</p>
+      <div class="cake" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="panel entra" style="--i:1">
+      <h2>Todo listo para jugar</h2>
+      <p class="muted" style="margin:0">Los jugadores entran desde su celular a:</p>
+      <div class="enlace"><b>${esc(LINK_VISIBLE)}</b><button class="mini" id="copiar" type="button">Copiar</button></div>
+      <button class="btn azul" id="hostBtn" ${hasPeer ? "" : "disabled"}>Crear partida</button>
+      <button class="btn ghost" id="editBtn">Editar preguntas</button>
+      <div class="err">${hasPeer ? "" : "No se pudo cargar el módulo de conexión. Recarga la página."}</div>
+      <p class="nota">${ICONO_CANDADO}<span>Esta página es solo para quien organiza: desde aquí se crean las partidas. No compartas este enlace.</span></p>
+    </div>
+  </section>`;
+  document.getElementById("hostBtn").onclick = startHost;
+  document.getElementById("editBtn").onclick = renderEditor;
+  document.getElementById("copiar").onclick = async e => {
+    const b = e.currentTarget;
+    try { await navigator.clipboard.writeText(LINK_JUGADORES); b.textContent = "¡Copiado!"; } catch { b.textContent = "Cópialo a mano"; }
+    setTimeout(() => { b.textContent = "Copiar"; }, 1800);
+  };
+  setStatus("Panel del organizador");
+}
+renderHome();
+
+/* =================== PRESENTADOR =================== */
+const H = { pin:"", phase:"lobby", qi:0, players:{}, conns:{}, answers:{}, endAt:0, tick:null, peer:null, tries:0 };
+
+function startHost(){
+  if (!hasPeer) return;
+  mode = "host";
+  H.phase = "lobby"; H.qi = 0; H.players = {}; H.conns = {}; H.answers = {}; H.tries = 0;
+  $app.innerHTML = `<div class="center entra"><div class="big">Creando partida…</div><p class="muted">Esto toma unos segundos.</p></div>`;
+  openHostPeer();
+}
+function openHostPeer(){
+  H.pin = String(Math.floor(1000 + Math.random()*9000));
+  const peer = new Peer(ID_PREFIX + H.pin, PEER_OPTS);
+  H.peer = peer;
+  peer.on("open", () => { setStatus("PIN " + H.pin + " · conectado"); renderHost(); clearInterval(H.vigia); H.vigia = setInterval(vigilarJugadores, 3000); });
+  peer.on("connection", conn => {
+    conn.on("data", msg => onHostMsg(conn, msg));
+    conn.on("close", () => { const p = H.players[conn.peer]; delete H.conns[conn.peer]; if (p){ p.here = false; afterChange(); } });
+    conn.on("error", () => {});
+  });
+  peer.on("disconnected", () => { setStatus("Reconectando…"); try { peer.reconnect(); } catch {} });
+  peer.on("error", err => {
+    if (err.type === "unavailable-id" && H.tries++ < 5){ peer.destroy(); openHostPeer(); return; }
+    if (err.type === "network" || err.type === "server-error" || err.type === "socket-error" || err.type === "socket-closed"){
+      setStatus("Sin conexión al servidor");
+      if (H.phase === "lobby" && !Object.keys(H.players).length){
+        $app.innerHTML = `<div class="center entra"><div class="big">No pudimos crear la partida</div><p class="muted" style="max-width:44ch">Revisa la conexión a internet. Si estás en la red de la empresa, prueba con otra red o con datos móviles.</p><button class="btn" id="retry">Intentar de nuevo</button></div>`;
+        document.getElementById("retry").onclick = () => { try{peer.destroy();}catch{} startHost(); };
+      }
+    }
+  });
+}
+// Quién sigue conectado: cada celular manda una señal cada 4 s ("ping") y avisa al
+// cerrarse ("bye"). Si pasan 12 s sin señal, el nombre sale de la sala; vuelve si regresa.
+const SIN_SENAL_MS = 12000;
+function vigilarJugadores(){
+  let cambio = false;
+  for (const p of Object.values(H.players)){
+    if (p.here && Date.now() - (p.visto || 0) > SIN_SENAL_MS){ p.here = false; cambio = true; }
+  }
+  if (cambio) afterChange();
+}
+function onHostMsg(conn, msg){
+  if (!msg || typeof msg !== "object") return;
+  const id = conn.peer;
+  const pj = H.players[id];
+  if (msg.t === "bye"){ if (pj && pj.here){ pj.here = false; afterChange(); } return; }
+  if (pj){
+    pj.visto = Date.now();
+    if (!pj.here && msg.t !== "join"){ pj.here = true; H.conns[id] = conn; afterChange(); if (H.phase !== "lobby") sendTo(conn); }
+  }
+  if (msg.t === "ping") return;
+  if (msg.t === "join"){
+    const nick = String(msg.nick || "Jugador").trim().slice(0,16) || "Jugador";
+    H.conns[id] = conn;
+    if (!H.players[id]) H.players[id] = { nick, score:0, last:0, ok:-1, here:true, visto:Date.now() };
+    else { H.players[id].nick = nick; H.players[id].here = true; }
+    afterChange();
+    if (H.phase !== "lobby") sendTo(conn); // en la sala, afterChange ya les avisó a todos
+  } else if (msg.t === "ans"){
+    if (H.phase !== "question" || !H.players[id] || H.answers[id] || msg.q !== H.qi) return;
+    const c = Math.max(0, Math.min(QUESTIONS[H.qi].o.length-1, msg.c|0));
+    const ms = Math.max(0, Math.min(DUR*1000, Number.isFinite(Number(msg.ms)) ? Number(msg.ms) : DUR*1000));
+    H.answers[id] = { c, ms };
+    afterChange();
+  }
+}
+function afterChange(){
+  if (H.phase === "question"){
+    const here = Object.keys(H.players).filter(k => H.players[k].here);
+    if (here.length && here.every(k => H.answers[k])) { endQuestion(); return; }
+    updateAnsweredCount();
+  } else if (H.phase === "lobby"){ renderHost(); broadcast(); } // los celulares ven quién va entrando
+}
+function ranking(){ return Object.entries(H.players).map(([peer,p]) => ({peer,...p})).sort((a,b) => b.score - a.score); }
+function stateMsg(){
+  const res = {};
+  ranking().forEach((p,i) => { res[p.peer] = [p.score, p.last, i+1, p.ok]; });
+  const q = QUESTIONS[H.qi];
+  const reveal = H.phase !== "question" && H.phase !== "lobby";
+  return { t:"state", phase:H.phase, qi:H.qi, n:QUESTIONS.length, dur:DUR,
+    cur: H.phase === "lobby" ? null : { q:q.q, o:q.o, c: reveal ? q.c : null },
+    total:Object.keys(H.players).length, res,
+    // En la sala de espera: quiénes están (en orden de llegada), para mostrarlo en los celulares
+    jug: H.phase === "lobby" ? Object.entries(H.players).filter(([,p]) => p.here).map(([id,p]) => [id, p.nick]) : undefined };
+}
+function sendTo(conn){ try { if (conn.open) conn.send(stateMsg()); } catch {} }
+function broadcast(){ const m = stateMsg(); Object.values(H.conns).forEach(c => { try { if (c.open) c.send(m); } catch {} }); }
+
+// La pregunta cambia (y empieza a correr el tiempo) cuando la cortina tapa la pantalla
+function hostStartQuestion(qi = H.qi){
+  transicion("Pregunta " + (qi+1), "de " + QUESTIONS.length, () => {
+    H.qi = qi; H.phase = "question"; H.answers = {};
+    H.endAt = Date.now() + DUR*1000;
+    broadcast(); renderHost();
+    clearInterval(H.tick);
+    H.tick = setInterval(tickHost, 200);
+  });
+}
+function tickHost(){
+  const left = Math.max(0, H.endAt - Date.now());
+  const s = Math.ceil(left/1000), p = left/(DUR*1000)*100;
+  const t = document.getElementById("timer"), bar = document.getElementById("barra");
+  if (t){
+    t.style.setProperty("--p", p + "%");
+    const b = t.querySelector("b");
+    if (b.textContent !== String(s)){ b.textContent = s; if (s <= 5 && s > 0){ b.classList.remove("late"); void b.offsetWidth; b.classList.add("late"); } }
+    t.classList.toggle("urgente", s <= 5);
+  }
+  if (bar){ bar.style.setProperty("--p", p + "%"); bar.classList.toggle("urgente", s <= 5); }
+  if (left <= 0) endQuestion();
+}
+function endQuestion(){
+  if (H.phase !== "question") return;
+  clearInterval(H.tick);
+  const q = QUESTIONS[H.qi];
+  for (const [id,p] of Object.entries(H.players)){
+    const a = H.answers[id];
+    if (!a){ p.last = 0; p.ok = -1; continue; }
+    if (a.c === q.c){ p.last = Math.round(1000 * (1 - (a.ms/(DUR*1000))/2)); p.ok = 1; } else { p.last = 0; p.ok = 0; }
+    p.score += p.last;
+  }
+  H.phase = "reveal"; broadcast(); renderHost();
+}
+function hostNext(){
+  if (H.phase === "reveal" && Object.keys(H.players).length){
+    transicion("Clasificación", "Pregunta " + (H.qi+1) + " de " + QUESTIONS.length, () => { H.phase = "board"; broadcast(); renderHost(); });
+    return;
+  }
+  if (H.qi < QUESTIONS.length - 1) hostStartQuestion(H.qi + 1);
+  else transicion("¡Resultados!", "Septiembre en Juego", () => { H.phase = "end"; broadcast(); renderHost(); setTimeout(confetti, 1300); });
+}
+function hostRestart(){
+  for (const p of Object.values(H.players)){ p.score = 0; p.last = 0; p.ok = -1; }
+  H.qi = 0; H.phase = "lobby"; broadcast(); renderHost();
+}
+function hostExit(){ clearInterval(H.tick); clearInterval(H.vigia); try { H.peer && H.peer.destroy(); } catch {} H.peer = null; renderHome(); }
+function updateAnsweredCount(){
+  const el = document.getElementById("answered");
+  if (el) el.textContent = Object.keys(H.answers).length + " de " + Object.values(H.players).filter(p=>p.here).length + " respondieron";
+}
+// En el proyector las respuestas van en 4 mosaicos grandes con su figura
+function mosaicoHTML(q, reveal, counts){
+  return `<div class="mosaico">${q.o.map((o,i) => {
+    const cls = reveal ? (i === q.c ? " win" : " dim") : "";
+    return `<div class="tile c${i}${cls}" style="--i:${i}">${SHAPES[i]}<span>${esc(o)}</span>${reveal ? `<span class="n">${counts[i]}</span>` : ""}${reveal && i === q.c ? `<span class="ok">${ICONO_CHECK}</span>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+function renderLobby(){
+  const names = Object.entries(H.players).filter(([,p]) => p.here);
+  if (!document.getElementById("lobby")){
+    $app.innerHTML = `
+      <div class="lobby" id="lobby">
+        <p class="lobby-inst entra">Entra desde tu celular a <b>${esc(LINK_VISIBLE)}</b> y escribe este PIN</p>
+        <div class="pin" aria-label="PIN ${H.pin}">${[...H.pin].map((d,i) => `<b style="--i:${i}">${d}</b>`).join("")}</div>
+        <p class="cuenta-jug" id="cuenta"></p>
+        <div class="players" id="jugadores"></div>
+        <div class="row"><button class="btn" id="go">Empezar</button><button class="btn ghost" id="back">Salir</button></div>
+      </div>`;
+    document.getElementById("go").onclick = () => hostStartQuestion(0);
+    document.getElementById("back").onclick = hostExit;
+  }
+  // Solo se agregan o quitan los nombres que cambiaron (así no se repite la animación de todos)
+  const cont = document.getElementById("jugadores");
+  const ids = new Set(names.map(([id]) => id));
+  cont.querySelectorAll(".pl").forEach(ch => { if (!ids.has(ch.dataset.id)) ch.remove(); });
+  for (const [id,p] of names){
+    let ch = [...cont.querySelectorAll(".pl")].find(x => x.dataset.id === id);
+    if (!ch){ ch = document.createElement("span"); ch.className = "pl"; ch.dataset.id = id; cont.appendChild(ch); }
+    if (ch.textContent !== p.nick) ch.textContent = p.nick;
+  }
+  let vacio = cont.querySelector(".muted");
+  if (!names.length && !vacio){ vacio = document.createElement("span"); vacio.className = "muted"; vacio.textContent = "Esperando jugadores…"; cont.appendChild(vacio); }
+  if (names.length && vacio) vacio.remove();
+  document.getElementById("cuenta").textContent = names.length + (names.length === 1 ? " jugador conectado" : " jugadores conectados");
+  document.getElementById("go").disabled = !names.length;
+}
+function renderHost(){
+  const q = QUESTIONS[H.qi], n = QUESTIONS.length;
+  if (H.phase === "lobby"){ renderLobby(); return; }
+  if (H.phase === "question"){
+    const left = Math.max(0, Math.ceil((H.endAt - Date.now())/1000));
+    $app.innerHTML = `
+      <div class="h-cab">
+        <div class="chips"><span class="chip">Pregunta ${H.qi+1} de ${n}</span><span class="chip" id="answered"></span><span class="chip">PIN ${H.pin}</span></div>
+        <div class="reloj medio" id="timer" role="timer" aria-label="Segundos restantes"><b>${left}</b></div>
+      </div>
+      <div class="barra-tiempo" id="barra"><i></i></div>
+      <h2 class="h-pregunta">${esc(q.q)}</h2>
+      ${mosaicoHTML(q,false)}
+      <div class="bottom"><span></span><button class="btn ghost" id="skip">Terminar tiempo</button></div>`;
+    document.getElementById("skip").onclick = endQuestion;
+    updateAnsweredCount();
+    return;
+  }
+  if (H.phase === "reveal"){
+    const counts = [0,0,0,0]; Object.values(H.answers).forEach(a => counts[a.c]++);
+    $app.innerHTML = `
+      <div class="h-cab"><div class="chips"><span class="chip">Pregunta ${H.qi+1} de ${n}</span><span class="chip">${Object.keys(H.answers).length} respuestas</span></div></div>
+      <h2 class="h-pregunta">${esc(q.q)}</h2>
+      ${mosaicoHTML(q,true,counts)}
+      ${q.f ? `<div class="fact entra" style="--i:5"><b>Dato curioso</b>${esc(q.f)}</div>` : ""}
+      <div class="bottom"><span></span><button class="btn" id="next">${Object.keys(H.players).length ? "Ver clasificación" : (H.qi < n-1 ? "Siguiente pregunta" : "Terminar")}</button></div>`;
+    document.getElementById("next").onclick = hostNext;
+    return;
+  }
+  if (H.phase === "board"){
+    const r = ranking().slice(0,5);
+    $app.innerHTML = `
+      <h2 class="titulo-seccion">Clasificación</h2>
+      <div class="tabla">${r.map((p,i) => `<div class="fila ${i < 3 ? "top" + (i+1) : ""}" style="--i:${i}">
+        <span class="puesto">${puesto(i+1, i)}</span><span class="nm">${esc(p.nick)}</span>
+        <span>${p.last ? `<span class="gana" style="--i:${i}">+${p.last.toLocaleString("es-CO")}</span>` : ""}<span class="pts" data-desde="${p.score - p.last}" data-hasta="${p.score}" data-espera="${500 + i*120}">${p.score}</span></span></div>`).join("")}</div>
+      <div class="bottom"><span class="chip">Pregunta ${H.qi+1} de ${n}</span><button class="btn" id="next">${H.qi < n-1 ? "Siguiente pregunta" : "Ver podio"}</button></div>`;
+    animarNumeros();
+    document.getElementById("next").onclick = hostNext;
+    return;
+  }
+  if (H.phase === "end"){
+    const r = ranking(), pod = [[r[1],2], [r[0],1], [r[2],3]];
+    $app.innerHTML = `
+      <div class="center" style="gap:6px">
+        <h2 class="titulo-seccion">${r[0] ? "¡Felicitaciones, " + esc(r[0].nick) + "!" : "¡Gracias por jugar!"}</h2>
+        ${r[0] ? `<p class="muted entra" style="--i:2;margin:0;font-size:1.15rem">Primer lugar en Septiembre en Juego. ¡Gracias a todos por participar!</p>` : ""}
+      </div>
+      <div class="podio">${pod.map(([p,place]) => p
+        ? `<div class="pod p${place}">${trofeo(place, place === 1 ? 4 : place === 2 ? 2 : 0)}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score.toLocaleString("es-CO")} pts</span></div>`
+        : `<div></div>`).join("")}</div>
+      <div class="tabla">${r.slice(3,10).map((p,i) => `<div class="fila" style="--i:${i+6}"><span class="puesto">${puesto(i+4)}</span><span class="nm">${esc(p.nick)}</span><span class="pts">${p.score.toLocaleString("es-CO")}</span></div>`).join("")}</div>
+      <div class="row"><button class="btn" id="again">Jugar otra vez</button><button class="btn ghost" id="back">Salir</button></div>`;
+    document.getElementById("again").onclick = hostRestart;
+    document.getElementById("back").onclick = hostExit;
+  }
+}
+window.addEventListener("beforeunload", e => { if (mode === "host" && H.phase !== "lobby" && H.phase !== "end"){ e.preventDefault(); e.returnValue = ""; } });
+
+/* =================== EDITOR (se guarda en este navegador) =================== */
+let D = null;
+function renderEditor(){
+  mode = "editor";
+  if (!D) D = { dur:DUR, questions: QUESTIONS.map(x => ({ q:x.q, o:[0,1,2,3].map(i => x.o[i] || ""), c:x.c, f:x.f })) };
+  $app.innerHTML = `
+    <div class="edhead">
+      <div><p class="etq">Editor</p><h2>Preguntas del juego</h2>
+      <p class="muted" style="margin:6px 0 0;max-width:62ch">Los cambios se guardan en este navegador. Edita desde el mismo computador donde vas a proyectar: los celulares reciben las preguntas del presentador. Marca la correcta con el círculo; las opciones vacías no se muestran.</p></div>
+      <label class="durbox" for="dur">Segundos por pregunta <input id="dur" type="number" min="5" max="120" value="${D.dur}"></label>
+    </div>
+    <div class="edlist">${D.questions.map((x,qi) => `
+      <section class="edq" data-qi="${qi}">
+        <div class="edtop"><span class="etq">Pregunta ${qi+1}</span>
+          <span class="edtools">
+            <button class="mini" data-act="up" ${qi===0?"disabled":""} aria-label="Subir pregunta ${qi+1}">↑</button>
+            <button class="mini" data-act="down" ${qi===D.questions.length-1?"disabled":""} aria-label="Bajar pregunta ${qi+1}">↓</button>
+            <button class="mini del" data-act="del" aria-label="Eliminar pregunta ${qi+1}">Eliminar</button>
+          </span></div>
+        <input class="edin qin" id="q-${qi}" data-f="q" value="${esc(x.q)}" placeholder="Escribe la pregunta" maxlength="240">
+        <div class="edopts">${x.o.map((o,i) => `
+          <label class="edopt c${i}"><input type="radio" name="c-${qi}" id="c-${qi}-${i}" data-f="c" value="${i}" ${x.c===i?"checked":""} aria-label="Marcar opción ${LET[i]} como correcta">
+            <span class="sh">${SHAPES[i]}</span>
+            <input class="edin" id="o-${qi}-${i}" data-f="o" data-i="${i}" value="${esc(o)}" placeholder="Opción ${LET[i]}${i>1?" (opcional)":""}" maxlength="120"></label>`).join("")}
+        </div>
+        <input class="edin" id="f-${qi}" data-f="f" value="${esc(x.f)}" placeholder="Dato curioso que se muestra al revelar (opcional)" maxlength="400">
+      </section>`).join("")}
+    </div>
+    <div class="row" style="justify-content:flex-start"><button class="btn ghost" id="addQ">+ Agregar pregunta</button><button class="link" id="reset" style="color:#fff">Volver a las preguntas originales</button></div>
+    <div class="edbar">
+      <span class="err" id="edMsg"></span>
+      <span class="row"><button class="btn ghost" id="edCancel">Volver</button><button class="btn" id="edSave">Guardar</button></span>
+    </div>`;
+  const list = $app.querySelector(".edlist");
+  const upd = e => {
+    const t = e.target, sec = t.closest(".edq"); if (!sec) return;
+    const x = D.questions[+sec.dataset.qi];
+    if (t.dataset.f === "q") x.q = t.value;
+    else if (t.dataset.f === "f") x.f = t.value;
+    else if (t.dataset.f === "o") x.o[+t.dataset.i] = t.value;
+    else if (t.dataset.f === "c") x.c = +t.value;
+  };
+  list.addEventListener("input", upd); list.addEventListener("change", upd);
+  list.addEventListener("click", e => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const qi = +b.closest(".edq").dataset.qi, L = D.questions;
+    if (b.dataset.act === "up" && qi > 0) [L[qi-1], L[qi]] = [L[qi], L[qi-1]];
+    if (b.dataset.act === "down" && qi < L.length-1) [L[qi+1], L[qi]] = [L[qi], L[qi+1]];
+    if (b.dataset.act === "del"){
+      if (b.dataset.sure !== "1"){ b.dataset.sure = "1"; b.textContent = "¿Seguro? Eliminar"; return; }
+      if (L.length <= 1){ edMsg("El juego necesita al menos una pregunta."); return; }
+      L.splice(qi,1);
+    }
+    renderEditor();
+  });
+  document.getElementById("dur").oninput = e => { D.dur = e.target.value; };
+  document.getElementById("addQ").onclick = () => { D.questions.push({ q:"", o:["","","",""], c:0, f:"" }); renderEditor(); const nq = document.getElementById("q-" + (D.questions.length-1)); if (nq){ nq.focus(); nq.scrollIntoView({block:"center"}); } };
+  const rs = document.getElementById("reset");
+  rs.onclick = () => { if (rs.dataset.sure !== "1"){ rs.dataset.sure = "1"; rs.textContent = "¿Seguro? Se borran tus cambios"; return; } try { localStorage.removeItem(STORE_KEY); } catch {} D = null; loadSet(); renderEditor(); edMsg("Listo: volviste a las preguntas originales.", true); };
+  document.getElementById("edCancel").onclick = () => { D = null; renderHome(); };
+  document.getElementById("edSave").onclick = saveEditor;
+  setStatus("Editando preguntas");
+}
+function edMsg(t, ok){ const m = document.getElementById("edMsg"); if (m){ m.textContent = t; m.classList.toggle("ok", !!ok); } }
+function saveEditor(){
+  for (let i = 0; i < D.questions.length; i++){
+    const x = D.questions[i];
+    if (!x.q.trim()) return edMsg("A la pregunta " + (i+1) + " le falta el texto.");
+    if (x.o.filter(s => s.trim()).length < 2) return edMsg("La pregunta " + (i+1) + " necesita al menos 2 opciones.");
+    if (!x.o[x.c] || !x.o[x.c].trim()) return edMsg("En la pregunta " + (i+1) + ", la respuesta marcada como correcta está vacía.");
+  }
+  const questions = D.questions.map(x => {
+    const keep = x.o.map((s,i) => ({s:s.trim(), i})).filter(k => k.s);
+    return { q:x.q.trim(), o:keep.map(k => k.s), c:keep.findIndex(k => k.i === x.c), f:x.f.trim() };
+  });
+  const set = cleanSet({ dur:D.dur, questions });
+  QUESTIONS = set.questions; DUR = set.dur; D = null;
+  let saved = true; try { localStorage.setItem(STORE_KEY, JSON.stringify(set)); } catch { saved = false; }
+  renderEditor();
+  edMsg(saved ? "Guardado en este navegador." : "Cambios listos para esta sesión (el navegador no permitió guardarlos).", true);
+}
+</script>
+</body>
+</html>
